@@ -1,0 +1,74 @@
+# Archivos y directorios de Python
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Variables de entorno
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Archivos de configuración de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Archivos temporales
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Archivos de backup
+*.bak
+*.backup
+*~
+
+# Archivos de base de datos locales (si los hubiera)
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de Excel temporales
+~$*.xlsx
+~$*.xls
+
+# Node modules (si se añade JavaScript/Node.js en el futuro)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de coverage y testing
+.coverage
+.pytest_cache/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Configuraciones específicas del proyecto
+config_local.py
+secrets.json
+
+# Archivos de distribución
+build/
+dist/
+*.egg-info/
