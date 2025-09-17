@@ -15,6 +15,7 @@ import socket
 import logging
 import signal
 import multiprocessing
+import base64
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import mysql.connector
@@ -315,6 +316,106 @@ body.app-bg {
   min-height: 100vh;
   font-family: var(--font-base);
   line-height:1.35;
+  padding-top: 6rem;
+}
+
+.navbar-modern {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.45);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(12px);
+}
+
+.nav-container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.nav-start {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.nav-logo {
+  height: 3.1rem;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.45));
+}
+
+.line-selector-group .form-select {
+  min-width: 11rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #f8fafc;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.35rem 2.25rem 0.35rem 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.line-selector-group .form-select:focus {
+  border-color: var(--axial-primary);
+  box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+.nav-title h1 {
+  font-size: 1.45rem;
+  letter-spacing: 0.03em;
+  color: #f1f5f9;
+  text-transform: uppercase;
+}
+
+.nav-clock {
+  min-width: 13rem;
+}
+
+.nav-datetime {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #e2e8f0;
+  display: inline-block;
+  padding: 0.35rem 1.25rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 1200px) {
+  .nav-title {
+    order: 3;
+    width: 100%;
+    margin-top: 0.75rem;
+  }
+
+  .nav-clock {
+    order: 2;
+    flex-grow: 1;
+    text-align: right;
+  }
+}
+
+@media (max-width: 768px) {
+  .nav-container {
+    gap: 1rem;
+  }
+
+  .nav-clock {
+    width: 100%;
+    text-align: left;
+  }
+
+  .nav-datetime {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600; }
@@ -411,7 +512,7 @@ h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600;
 <body class="app-bg">
   <!-- Navbar Principal -->
   <header class="mb-4">
-    <div class="container-fluid mb-4">
+    <div class="container-fluid">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3 fixed-top">
         <div class="container-fluid d-flex align-items-center">
           <!-- Logo -->
@@ -635,6 +736,30 @@ const machineStates = {
         allDataReady: false
     }
 };
+
+function updateDateTimeDisplay() {
+    const datetimeElement = document.getElementById('current-datetime');
+    if (!datetimeElement) {
+        return;
+    }
+
+    const now = new Date();
+    const dateFormatter = new Intl.DateTimeFormat('es-MX', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+    const timeFormatter = new Intl.DateTimeFormat('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+
+    const formattedDate = dateFormatter.format(now);
+    const formattedTime = timeFormatter.format(now);
+    datetimeElement.textContent = `${formattedDate} | ${formattedTime}`;
+}
 
 // Función para mostrar modal con mensaje
 function showModal(title, message, isError = false, autoClose = false) {
@@ -1206,7 +1331,10 @@ function setupEventListeners() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Aplicación IMD Control iniciada');
     setupEventListeners();
-    
+
+    updateDateTimeDisplay();
+    setInterval(updateDateTimeDisplay, 1000);
+
     // Event listener para el selector de línea
     const lineSelector = document.getElementById('line-selector');
     if (lineSelector) {
@@ -1237,6 +1365,24 @@ document.addEventListener('DOMContentLoaded', function() {
   </script>
 </body>
 </html>"""
+        logo_placeholder = "IMD_LOGO_PLACEHOLDER"
+        if logo_placeholder in html_content:
+            logo_data_uri = ''
+            logo_path = os.path.join(os.path.dirname(__file__), 'ImagenLogo1.png')
+            try:
+                with open(logo_path, 'rb') as logo_file:
+                    encoded_logo = base64.b64encode(logo_file.read()).decode('utf-8')
+                    logo_data_uri = f"data:image/png;base64,{encoded_logo}"
+            except FileNotFoundError:
+                logger.error('Archivo de logo ImagenLogo1.png no encontrado')
+            except Exception as logo_error:
+                logger.error(f'Error cargando logo ImagenLogo1.png: {logo_error}')
+
+            if logo_data_uri:
+                html_content = html_content.replace(logo_placeholder, logo_data_uri)
+            else:
+                html_content = html_content.replace(logo_placeholder, '')
+
         return html_content
     except Exception as e:
         return f"Error cargando la aplicación: {e}", 500
