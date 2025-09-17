@@ -513,30 +513,32 @@ h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600;
   <!-- Navbar Principal -->
   <header class="mb-4">
     <div class="container-fluid">
-    <nav class="navbar navbar-expand-lg navbar-dark navbar-modern fixed-top py-3">
-        <div class="container-fluid nav-container">
-          <div class="nav-start">
-            <img src="IMD_LOGO_PLACEHOLDER"
-                 alt="IMD Logo"
-                 class="nav-logo">
-            <div class="line-selector-group">
-              <label for="line-selector" class="visually-hidden">Selecciona línea</label>
-              <select class="form-select" id="line-selector">
-                <option value="">Seleccione línea...</option>
-                <option value="PANA_A">PANA_A</option>
-                <option value="PANA_B">PANA_B</option>
-                <option value="PANA_C">PANA_C</option>
-                <option value="PANA_D">PANA_D</option>
-              </select>
-            </div>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3 fixed-top">
+        <div class="container-fluid d-flex align-items-center">
+          <!-- Logo -->
+          <div class="navbar-brand me-4">
+            <img src="data:image/png;base64,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" 
+                 alt="IMD Logo" 
+                 height="50" 
+                 class="me-3">
           </div>
-          <div class="flex-grow-1 text-center nav-title">
-            <h1 class="navbar-text mb-0 fw-bold">
+          
+          <!-- Título Centrado -->
+          <div class="flex-grow-1 text-center">
+            <h1 class="navbar-text mb-0 fw-bold" style="font-size: 1.5rem; color: white;">
               Control de cambios de material IMD
             </h1>
           </div>
-          <div class="nav-clock text-end">
-            <span id="current-datetime" class="nav-datetime">--/--/---- | --:--:--</span>
+          
+          <!-- Selector de Línea -->
+          <div class="navbar-nav ms-auto">
+            <select class="form-select bg-secondary text-white" id="line-selector" style="min-width: 150px;">
+              <option value="">Seleccione línea...</option>
+              <option value="PANA_A">PANA_A</option>
+              <option value="PANA_B">PANA_B</option>
+              <option value="PANA_C">PANA_C</option>
+              <option value="PANA_D">PANA_D</option>
+            </select>
           </div>
         </div>
       </nav>
