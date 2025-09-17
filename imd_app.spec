@@ -22,6 +22,7 @@ a = Analysis(
         'mysql.connector',
         'flask',
         'flask_cors',
+        'requests',
         'webview',
         'threading',
         'socket',

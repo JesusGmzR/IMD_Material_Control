@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 IMD Material Control Desktop Application
-Aplicación de escritorio que combina Flask backend con pywebview frontend
-Versión de producción optimizada para múltiples PCs
+Aplicación de escritorio integrada que combina Flask backend con pywebview frontend
+Versión de producción optimizada para múltiples PCs - Todo en un solo archivo
 """
 
 import os
@@ -19,7 +19,95 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import mysql.connector
 from datetime import datetime
-from config import ProductionConfig
+
+# =====================================================================================
+# CONFIGURACIÓN INTEGRADA (anteriormente config.py)
+# =====================================================================================
+
+class ProductionConfig:
+    """Configuración para entorno de producción integrada"""
+    
+    # Configuración de base de datos - se adapta automáticamente por PC
+    @staticmethod
+    def get_db_config():
+        """Retorna configuración de DB exclusivamente para la nube indicada."""
+        # Solo usar esta base de datos y credenciales (sin locales)
+        config = {
+            'host': 'up-de-fra1-mysql-1.db.run-on-seenode.com',
+            'port': 11550,
+            'user': 'db_rrpq0erbdujn',
+            'password': '5fUNbSRcPP3LN9K2I33Pr0ge',
+            'database': 'db_rrpq0erbdujn',
+            'machine_default': 'AXIAL',
+            # Mantener lista de candidatos solo con el mismo perfil (compatibilidad)
+            'candidates': [
+                {
+                    'host': 'up-de-fra1-mysql-1.db.run-on-seenode.com',
+                    'port': 11550,
+                    'user': 'db_rrpq0erbdujn',
+                    'password': '5fUNbSRcPP3LN9K2I33Pr0ge',
+                    'database': 'db_rrpq0erbdujn',
+                }
+            ]
+        }
+
+        return {
+            'host': config['host'],
+            'port': config['port'],
+            'user': config['user'],
+            'password': config['password'],
+            'database': config['database'],
+            'charset': 'utf8mb4',
+            'collation': 'utf8mb4_unicode_ci',
+            'autocommit': True,
+            'machine_default': config['machine_default'],
+            'candidates': config['candidates'],
+        }
+    
+    # Configuración de aplicación
+    APP_NAME = "IMD Material Control"
+    APP_VERSION = "1.0.2"  # Incrementado por integración
+    
+    # Configuración de ventana
+    WINDOW_CONFIG = {
+        'width': 1920,  # Tamaño completo
+        'height': 1080,
+        'min_size': (1200, 800),
+        'resizable': False,  # No redimensionable
+        'fullscreen': False,
+        'maximized': True,   # Iniciar maximizada
+        'on_top': False
+    }
+    
+    # Configuración de icono
+    @staticmethod
+    def get_icon_path():
+        """Retorna la ruta del icono de la aplicación"""
+        icon_path = os.path.join(os.path.dirname(__file__), 'icono_app.png')
+        return icon_path if os.path.exists(icon_path) else None
+    
+    # Configuración de logs
+    LOG_CONFIG = {
+        'level': 'INFO',
+        'file_path': os.path.join(os.path.expanduser('~'), 'IMD_Logs', 'app.log'),
+        'max_size': 10 * 1024 * 1024,  # 10MB
+        'backup_count': 5
+    }
+    
+    # URLs y puertos
+    FLASK_HOST = '127.0.0.1'
+    FLASK_DEBUG = False
+    
+    @staticmethod
+    def get_app_data_dir():
+        """Directorio para datos de la aplicación"""
+        app_dir = os.path.join(os.path.expanduser('~'), 'IMD_MaterialControl')
+        os.makedirs(app_dir, exist_ok=True)
+        return app_dir
+
+# =====================================================================================
+# APLICACIÓN PRINCIPAL
+# =====================================================================================
 
 # Configurar logging
 def setup_logging():
@@ -45,25 +133,62 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuración de la aplicación desde config.py
-# Usar configuración de base de datos en la nube para distribución
-db_config = {
-    'host': 'up-de-fra1-mysql-1.db.run-on-seenode.com',
-    'port': 11550,
-    'database': 'db_rrpq0erbdujn',
-    'user': 'db_rrpq0erbdujn',
-    'password': '5fUNbSRcPP3LN9K2I33Pr0ge',
-    'charset': 'utf8mb4',
-    'use_unicode': True
-}
+# Usar configuración de base de datos de ProductionConfig y soportar candidatos
+db_config = ProductionConfig.get_db_config()
 
 # Función para obtener conexión a la base de datos
 def get_db_connection():
-    try:
-        connection = mysql.connector.connect(**db_config)
-        return connection
-    except mysql.connector.Error as err:
-        logger.error(f"Error conectando a la base de datos: {err}")
-        return None
+    """Obtiene conexión a la base de datos con manejo de errores mejorado y candidatos"""
+    # Preparar lista de credenciales a probar: candidatos + principal
+    candidates = []
+    if isinstance(db_config, dict) and 'candidates' in db_config:
+        candidates.extend(db_config['candidates'])
+    # Añadir credencial principal al final si no está
+    primary = {
+        'host': db_config.get('host'),
+        'port': db_config.get('port', 11550),
+        'user': db_config.get('user'),
+        'password': db_config.get('password'),
+        'database': db_config.get('database')
+    }
+    if primary['host'] and primary not in candidates:
+        candidates.append(primary)
+
+    last_error = None
+    for idx, creds in enumerate(candidates, start=1):
+        try:
+            print(f"[INFO] Intentando conexión a MySQL (perfil {idx}/{len(candidates)}) en {creds['host']}:{creds.get('port', 11550)} como {creds.get('user')}")
+            connection = mysql.connector.connect(
+                host=creds['host'],
+                port=creds.get('port', 11550),
+                user=creds['user'],
+                password=creds['password'],
+                database=creds['database'],
+                charset='utf8mb4',
+                autocommit=True,
+                connection_timeout=10,
+                use_pure=True,
+            )
+
+            if connection.is_connected():
+                print("[SUCCESS] Conexión a base de datos establecida exitosamente")
+                return connection
+            else:
+                print("[ERROR] Conexión a base de datos no activa")
+                last_error = "Conexión no activa"
+        except mysql.connector.Error as err:
+            print(f"[ERROR] Error de MySQL con perfil {idx}: {err}")
+            logger.error(f"Error de MySQL con perfil {idx}: {err}")
+            last_error = err
+        except Exception as e:
+            print(f"[ERROR] Error de conexión con perfil {idx}: {e}")
+            logger.error(f"Error de conexión con perfil {idx}: {e}")
+            last_error = e
+
+    # Si todos fallan
+    print(f"[ERROR] No se pudo establecer conexión a la base de datos. Último error: {last_error}")
+    logger.error(f"No se pudo establecer conexión a la base de datos. Último error: {last_error}")
+    return None
 
 # Función para crear tabla de historial si no existe
 def create_history_table():
@@ -71,9 +196,13 @@ def create_history_table():
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
+            print("[INFO] Creando/verificando tabla historial_cambio_material_imd...")
             create_table_query = """
-            CREATE TABLE IF NOT EXISTS material_change_history (
+            CREATE TABLE IF NOT EXISTS historial_cambio_material_imd (
                 id INT AUTO_INCREMENT PRIMARY KEY,
+                fecha DATE NOT NULL,
+                hora TIME NOT NULL,
+                line VARCHAR(10) NOT NULL,
                 posicion_de_feeder VARCHAR(50) NOT NULL,
                 qr_almacen VARCHAR(200) NOT NULL,
                 numero_de_parte VARCHAR(100) NOT NULL,
@@ -82,17 +211,38 @@ def create_history_table():
                 numero_de_lote_proveedor VARCHAR(100),
                 polaridad VARCHAR(10),
                 persona VARCHAR(100),
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_part_number (numero_de_parte),
-                INDEX idx_timestamp (timestamp)
+                INDEX idx_fecha (fecha),
+                INDEX idx_line (line),
+                INDEX idx_created_at (created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             """
             cursor.execute(create_table_query)
             connection.commit()
+            
+            # Verificar que la tabla se creó correctamente
+            verify_query = """
+            SELECT COUNT(*) FROM information_schema.tables 
+            WHERE table_schema = %s AND table_name = 'historial_cambio_material_imd'
+            """
+            cursor.execute(verify_query, (connection.database,))
+            table_exists = cursor.fetchone()[0] > 0
+            
+            if table_exists:
+                print("[SUCCESS] Tabla historial_cambio_material_imd verificada exitosamente")
+                logger.info("Tabla de historial creada/verificada exitosamente")
+            else:
+                print("[ERROR] No se pudo verificar la creación de la tabla")
+                logger.error("No se pudo verificar la creación de la tabla")
+                
             cursor.close()
             connection.close()
-            logger.info("Tabla de historial creada/verificada exitosamente")
+    except mysql.connector.Error as db_error:
+        print(f"[ERROR] Error MySQL creando tabla: {db_error}")
+        logger.error(f"Error MySQL creando tabla de historial: {db_error}")
     except Exception as e:
+        print(f"[ERROR] Error general creando tabla: {e}")
         logger.error(f"Error creando tabla de historial: {e}")
 
 # Ruta principal que sirve la aplicación
@@ -235,14 +385,43 @@ h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600;
 .card-header.radial-primary.text-center.py-3 {margin-bottom: 0; font-weight: 600; max-height: 3rem;}
   </style>
 </head>
-<body class="app-bg py-4">
+<body class="app-bg">
+  <!-- Navbar Principal -->
   <header class="mb-4">
-    <div class="container">
-      <h1 class="display-6 text-center fw-bold">Control de cambios de material IMD</h1>
+    <div class="container-fluid">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3 fixed-top">
+        <div class="container-fluid d-flex align-items-center">
+          <!-- Logo -->
+          <div class="navbar-brand me-4">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPsAAADJCAYAAADlwEQAAAAAAXNSR0IArs4c6QAAIABJREFUeF7svQm8XVV1P/4983znN2UOhDFMihWntrFSmWRQmzoVRaU4VBEtP2v7q5pqW+vQqqCiaJUKFDWtCigoWOSnIlqbgoEwZs5L3nznc898zv+/9rk3776Xl5eX5AVeIocPn5t37zn77LPP+u619trrfReH547nRuC5EfidGAHud+Ipn3vI50bguRHAc2B/ZoWAw7p16ZivW5fQx5p1a4SeTT3s393H2Ooxdt796+6PDrOL+7Td3d6adWvE2dq/f9394QHu35GhWe8zSxt0/aFee5hD87t1+XNgn6f3TaDRJjShKpp8rIkZRVB6x+r1vFI0X9Zo2TleU0p1x+4NuCQXIFFERRKSIE6EJPL5ZF9hZwhIwImiQGDsvKe9n1wKDy5JEKb/5riEZ7Bp/0mXA4IoigmXth93P2sCjk5HwoGPuXa7U86guyaiKEppT9pzDtduvt3nhEvSa+lSarDrk+PBRUEY0RlcgiSmduKEGmMXJQkSVVAetmR1KGi6T6i88ojiOINK1miNbbLjntVj8Rwmm3l6g8d+M8+B/RDe8Elvu8RCqQQ7aISGLqyOESwXJenMKI6fH3HcKXW7sTjmoXiIEfMcZF1F07WhmDr8OEKUxIjjCAgjyKLURufUjnRwI/IMkvscBLmIAxIhQcxNBWnnCnZOFO1tn2/rz70vnWYHXpicBKa1M3nT7an3otL0r/pQT/kUeWHK34iTvX/TbKJJFurlGiRegus4yGpm1VC1jQon/lbkuG3w3e/qkmJb25Xm/Tfd5D1nBRyCwLYveQ7scxy7c977pkyD83O+xp1iLeq5aKxZu3S4MrosjD2gUYfa0wtO5KFpOgRJQK3RgGGZCOMIsq6hXC4DEg03jyTyAVGGIHCI/GCKETsd2qQHu4+2Rk+VKR+nKGMg5UG6c8onwZgTwbe/5xCDZ+o/BpkBBE5BUWcFexiSFT9N4zNDoW19xyGoXSQ8OJpNqH3qT/uT5jT6m4Mw5Xv2O3hIvAy34cHMZeG6LpucBEFgt6RHC0Yn0NuzyNdj/hd6kNxuJfzdTYPfsWnden+Or+65054D+/5lYM0Va9Sa1WPFGU0OuejFtaD1svFG9TyXi5fzhqoploGQi8AJQJhE0DQFjuNBYLYqhzgJQRosDgLwkoQ4apvACV0jgZS1JCkAn8ANZpdZJvgEixlXtTyCiMCemuPprDH1U+JpFbDv952VQRDNviTn2f2n33zSVucSerapNnxq6bcnFRqkmWz88AzMURBA4CVA4MHLEnuMGAkCNyCzBJwgwpI0wAtgj5bB256nJfzWklW4O6dn7xWEZJPnSeWNn7m59ZzWn31ee06zd8Zn3Tp+De7nh1o9x/OKeOmY27hwvFY9QS9lFvmkESURgywwcEq6ijiOkZC08gkTWMQxRFVFaLcgKipZx0jCCKQZkyhGNptlWosO3/fZv6MwgGJmuszafV8W3YeBfT/vkSeN2V42z/aq93dKFCWp3t6PCS+KHf/dzD60mcC+P3B3vk/YBJFOBkkQQlVVtHwPsqYiimPmhIi8kC3q6dk4XoAuypATHrHjgw9jJH6IJOFQazi7S7nCLyxeuTWxnZ+vyFWb5PBcv3794To2jzmL4Hca7ORUGxvtUaMiTkoE4dJG4L6+EXonhCKHSCRLlGMgZ3CIYmZeEnAJrLqqIUYEDwTaMNXgjgPZMNhEQAc7n9xRHMf+p2/pt5C0KU0QBH5JnRSqjp+MgS99NRLNGvs56AyOfAChD0mSEAQBZFlm92RmfhyD53n2G/3b8zz2c91fsN8dz4UoqzuP3sGNYNvcNG1Zy6Zqr8GENmzWfgfNGvs5gP3sV7q/d9Ke9HjY6t6dF9HfjudClNX9vWKjzPQ5AOxP4xU8FhC+s6a8w2ePd9FzhHj7X/s9B4wdNOIyKz6T5sHBgzzbPZ49Hgg3x+DZa/g5rO1rnD9XM+9cxo7H9hq5nSsjPZdb++d8BI6+N44rwc8xxvb//Wd6Zj5aNcfbPRdsOx1Xvu9w1Jb5fy29vgZnz7c7tn9eNEGRYoNNPr5zLLc3mHfbP3OsF/dYO5vjWPCYfOxrfOZcwb5t8hyGFdJMN6I7a4i8A/j3OGTGdZyJzz/3rk+7jrf4+lzOsLGcwdvfY41HPF5g7+FxOdZJ6NlteDbB99xdp6w11+8aL3vTkUZGDu9x5Hv2Y5k/n81zztRrWPP8H3vsOGz85GRH74nOdRacsOYm++g5fOys2PPeM5gPd/T3Og8j3nfsPhAO+7yHXfkZPIpWuZ7qNJ8WBfAOZuKz8G7pPNSPJLQ2Pj39vR3G8Z6zw22fZsW5c56Hz/asfaOGl0bwUfuPa5RzYD9kJptJ+CjNhqFTWP6dvcN/EyaYr+w/76e1LM4d3h2fzfHu2cGsZw2zPvsb0Wdqg/4gR7c7jnKq8xnP2k9s/fNedITzg+YV4/uxzZJHN+mctbfxYL+Z7Y8N7M/ufO2ZE7wT1pUe+M2rPnTkz5n/nPtuOGPh4V73XGvnYNYPOQxo2RjMOnZnXOQMj/jP8aOeP1O2/eFmfDJdZa3k8qCL0D9B1vWLJzKZHnLcgfA7aEp5xk7l6fMuOv96w63a/r7e4d9yPG6y/qP//rn3fwY19OfBPLezHTJE/3Z/f3v6l9XJxqm/efcq9e9+bfpLJzJ2/jZy9QOv/fY3/97E79dn8vB7/mW1zQdt3fZQz/iT5/0/57I8bfaNh/V/LrzlzMdN74Uf9Y1LNJFJzWk8h3hMhxtH7cfXW5c//kMT7P65Q7uOjWKp1qhC/kOoXzLjFP/i0EYW9vU1GlP6qpLtAe+L9hse2rDPG7cf9sNyV5b4jfsOp5EgJ8LFV936r8/3vqtN8IwvPO/bm7aGf3v39VK+q5rvs96n+8W3vrrnYQe9KLjPLczd/f7HKz/43hX/rY7/0mWxoVqnB0m4Ov+pS5/d8y/58/eL9/1w3xdeLK6vRkGQFH3f+GfXbOrzXTqHlW5f6XdfdfdTtbw1u65ZN9UfP2r/8aK+efttZe3Q1u9/8WfvKxr6/7fkF98ef6JaJCf46v0HDOc8PxYi4gF/v7K3be67JvU7et9dz15wgZ/96IvbNm0y96w3+jdvP0yJZs58X4mTfW3vB7//xT/dL7fMo/8D3hPl9cuvQJcAAAAASUVORK5CYII=" 
+                 alt="IMD Logo" 
+                 height="50" 
+                 class="me-3">
+          </div>
+          
+          <!-- Título Centrado -->
+          <div class="flex-grow-1 text-center">
+            <h1 class="navbar-text mb-0 fw-bold" style="font-size: 1.5rem; color: white;">
+              Control de cambios de material IMD
+            </h1>
+          </div>
+          
+          <!-- Selector de Línea -->
+          <div class="navbar-nav ms-auto">
+            <select class="form-select bg-secondary text-white" id="line-selector" style="min-width: 150px;">
+              <option value="">Seleccione línea...</option>
+              <option value="PANA_A">PANA_A</option>
+              <option value="PANA_B">PANA_B</option>
+              <option value="PANA_C">PANA_C</option>
+              <option value="PANA_D">PANA_D</option>
+            </select>
+          </div>
+        </div>
+      </nav>
     </div>
   </header>
-  <!-- Cambiado a container-fluid para ancho completo -->
-  <main class="container-fluid pb-4 px-4">
+    <!-- Cambiado a container-fluid para ancho completo -->
+    <main class="container-fluid pb-4 px-4 pt-5">
     <!-- La fila ahora ocupa 100% del viewport -->
     <div class="row g-4 px-4">
       <!-- Máquina AXIAL -->
@@ -395,6 +574,8 @@ h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600;
 const API_BASE_URL = window.location.origin + '/api';
 
 // Variables globales para cada máquina
+let selectedLine = ''; // Variable global para la línea seleccionada
+
 const machineStates = {
     axial: {
         machine: 'AXIAL',
@@ -527,7 +708,8 @@ async function searchPart(machineType, qrAlmacen) {
         // Buscar en base de datos
         const result = await apiRequest('/search-part', {
             qr_almacen: qrAlmacen,
-            machine: state.machine
+            machine: state.machine,
+            line: selectedLine
         });
         
         if (result.success) {
@@ -567,11 +749,17 @@ async function validateFeeder(machineType, feederScanned) {
         return;
     }
     
+    if (!selectedLine) {
+        showModal('Error', 'Debe seleccionar una línea de producción', true);
+        return;
+    }
+    
     try {
         const result = await apiRequest('/validate-feeder', {
             part_number: state.partNumber,
             feeder_scanned: feederScanned,
-            machine: state.machine
+            machine: state.machine,
+            line: selectedLine
         });
         
         if (result.success) {
@@ -592,7 +780,12 @@ async function validateFeeder(machineType, feederScanned) {
             // Actualizar bloque de resultado
             updateResultDisplay(machineType);
             
-            console.log(`Validación feeder ${state.machine}:`, result.is_valid ? 'OK' : 'NG');
+            // Si el feeder es válido, mostrar la polaridad esperada
+            if (result.is_valid && result.expected_polarity) {
+                updatePolarityDisplay(machineType, result.expected_polarity);
+            }
+            
+            console.log(`Validación feeder ${state.machine} (línea ${selectedLine}):`, result.is_valid ? 'OK' : 'NG');
         } else {
             showModal('Error', 'Error validando feeder', true);
         }
@@ -612,11 +805,17 @@ async function validatePolarity(machineType, polarityScanned) {
         return;
     }
     
+    if (!selectedLine) {
+        showModal('Error', 'Debe seleccionar una línea de producción', true);
+        return;
+    }
+    
     try {
         const result = await apiRequest('/validate-polarity', {
             part_number: state.partNumber,
             polarity_scanned: polarityScanned,
-            machine: state.machine
+            machine: state.machine,
+            line: selectedLine
         });
         
         if (result.success) {
@@ -640,7 +839,7 @@ async function validatePolarity(machineType, polarityScanned) {
             // Actualizar color del resultado según validación de polaridad
             updateResultDisplay(machineType, true);
             
-            console.log(`Validación polaridad ${state.machine}:`, result.is_valid ? 'OK' : 'NG');
+            console.log(`Validación polaridad ${state.machine} (línea ${selectedLine}):`, result.is_valid ? 'OK' : 'NG');
         } else {
             showModal('Error', 'Error validando polaridad', true);
         }
@@ -661,6 +860,15 @@ function updatePolarityDisplayColor(machineType, isValid) {
             polarityDisplayDiv.innerHTML = `<h1 style="color: ${color}; margin: 0; text-align: center; line-height: 1.2; padding: 20px 0;">${currentText}</h1>`;
             console.log(`🎨 Color de polaridad actualizado para ${machineType}: ${isValid ? 'VERDE (válida)' : 'ROJO (inválida)'}`);
         }
+    }
+}
+
+// Función para actualizar el display de polaridad con el valor esperado
+function updatePolarityDisplay(machineType, expectedPolarity) {
+    const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
+    if (polarityDisplayDiv) {
+        polarityDisplayDiv.innerHTML = `<h1 style="color: white; margin: 0; text-align: center; line-height: 1.2; padding: 20px 0;">${expectedPolarity || 'N/A'}</h1>`;
+        console.log(`📋 Polaridad esperada mostrada para ${machineType}: ${expectedPolarity}`);
     }
 }
 
@@ -746,7 +954,8 @@ async function saveToHistory(machineType) {
             qr_de_proveedor: state.qrProveedor,
             numero_de_lote_proveedor: state.loteProveedor,
             polaridad: state.polaridad,
-            persona: state.persona
+            persona: state.persona,
+            line: selectedLine
         };
         
         const result = await apiRequest('/save-history', historyData);
@@ -824,6 +1033,13 @@ function clearMachineForm(machineType) {
     console.log(`✨ Formulario ${machineType.toUpperCase()} completamente limpiado`);
 }
 
+// Función para limpiar todos los estados de máquina
+function clearAllMachineStates() {
+    console.log('🧹 Limpiando todos los estados de máquina por cambio de línea');
+    clearMachineForm('axial');
+    clearMachineForm('radial');
+}
+
 // Event listeners para inputs
 function setupEventListeners() {
     ['axial', 'radial'].forEach(machineType => {
@@ -889,6 +1105,20 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Aplicación IMD Control iniciada');
     setupEventListeners();
     
+    // Event listener para el selector de línea
+    const lineSelector = document.getElementById('line-selector');
+    if (lineSelector) {
+        lineSelector.addEventListener('change', function(e) {
+            selectedLine = e.target.value;
+            console.log(`📍 Línea seleccionada: ${selectedLine}`);
+            
+            // Limpiar estados si se cambia la línea
+            if (selectedLine) {
+                clearAllMachineStates();
+            }
+        });
+    }
+    
     // Verificar conexión con el servidor usando la URL dinámica
     fetch(`${API_BASE_URL}/health`)
         .then(response => response.json())
@@ -925,9 +1155,13 @@ def search_part():
         data = request.get_json()
         qr_almacen = data.get('qr_almacen', '').strip()
         machine = data.get('machine', '').strip()
+        line = data.get('line', '').strip()
         
         if not qr_almacen:
             return jsonify({'success': False, 'error': 'QR almacén requerido'})
+        
+        if not line:
+            return jsonify({'success': False, 'error': 'Línea de producción requerida'})
         
         # Extraer número de parte del QR almacén
         separators = [',', "'", '_', '-']
@@ -936,6 +1170,9 @@ def search_part():
             if sep in qr_almacen:
                 part_number = qr_almacen.split(sep)[0]
                 break
+        # Normalizar valores para comparación
+        part_number = part_number.strip()
+        machine_norm = machine.strip().upper()
         
         # Buscar en base de datos
         connection = get_db_connection()
@@ -943,13 +1180,15 @@ def search_part():
             return jsonify({'success': False, 'error': 'Error de conexión a base de datos'})
         
         cursor = connection.cursor(buffered=True)
+        # no_part: número de parte, machine: máquina, feeder: posición (sin prefijo)
+        # Construimos posicion_de_feeder como machine + '_' + feeder para mantener compatibilidad con la UI
         query = """
-        SELECT numero_de_parte, spec, posicion_de_feeder, polarity 
-        FROM imd_feeders_location_data 
-        WHERE numero_de_parte = %s AND posicion_de_feeder LIKE %s
+        SELECT no_part, spec, CONCAT(machine, '_', feeder) AS posicion_de_feeder, polarity
+        FROM imd_feeders_location_data
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, f"{machine}_%"))
+        cursor.execute(query, (part_number, machine_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -970,7 +1209,7 @@ def search_part():
             return jsonify({'success': False, 'error': 'Número de parte no encontrado'})
             
     except Exception as e:
-        print(f"❌ Error en search-part: {e}")
+        print(f"[ERROR] Error en search-part: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 # API para validar feeder
@@ -981,41 +1220,47 @@ def validate_feeder():
         part_number = data.get('part_number', '').strip()
         feeder_scanned = data.get('feeder_scanned', '').strip()
         machine = data.get('machine', '').strip()
+        line = data.get('line', '').strip()
+        machine_norm = machine.upper()
         
-        if not all([part_number, feeder_scanned, machine]):
-            return jsonify({'success': False, 'error': 'Datos incompletos'})
+        if not all([part_number, feeder_scanned, machine, line]):
+            return jsonify({'success': False, 'error': 'Datos incompletos (part_number, feeder_scanned, machine, line requeridos)'})
         
-        # Buscar feeder esperado
+        # Buscar feeder esperado considerando máquina y línea
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'error': 'Error de conexión a base de datos'})
         
         cursor = connection.cursor(buffered=True)
+        # Buscar en la tabla considerando máquina, línea y número de parte
         query = """
-        SELECT posicion_de_feeder 
-        FROM imd_feeders_location_data 
-        WHERE numero_de_parte = %s AND posicion_de_feeder LIKE %s
+        SELECT feeder, polarity
+        FROM imd_feeders_location_data
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        LIMIT 1
         """
-        cursor.execute(query, (part_number, f"{machine}_%"))
+        cursor.execute(query, (part_number, machine_norm))
         result = cursor.fetchone()
         
         cursor.close()
         connection.close()
         
         if result:
-            expected_feeder = result[0].split('_')[1]  # Extraer solo la parte del feeder
+            expected_feeder = str(result[0])  # feeder puro en DB
+            expected_polarity = result[1]     # polaridad esperada
             is_valid = expected_feeder.upper() == feeder_scanned.upper()
             return jsonify({
                 'success': True,
                 'is_valid': is_valid,
                 'expected_feeder': expected_feeder,
-                'scanned_feeder': feeder_scanned
+                'scanned_feeder': feeder_scanned,
+                'expected_polarity': expected_polarity
             })
         else:
             return jsonify({'success': False, 'error': 'Configuración de feeder no encontrada'})
             
     except Exception as e:
-        print(f"❌ Error en validate-feeder: {e}")
+        print(f"[ERROR] Error en validate-feeder: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 # API para validar polaridad
@@ -1026,9 +1271,11 @@ def validate_polarity():
         part_number = data.get('part_number', '').strip()
         polarity_scanned = data.get('polarity_scanned', '').strip()
         machine = data.get('machine', '').strip()
+        line = data.get('line', '').strip()
+        machine_norm = machine.upper()
         
-        if not all([part_number, polarity_scanned, machine]):
-            return jsonify({'success': False, 'error': 'Datos incompletos'})
+        if not all([part_number, polarity_scanned, machine, line]):
+            return jsonify({'success': False, 'error': 'Datos incompletos (part_number, polarity_scanned, machine, line requeridos)'})
         
         # Buscar polaridad esperada
         connection = get_db_connection()
@@ -1037,11 +1284,12 @@ def validate_polarity():
         
         cursor = connection.cursor(buffered=True)
         query = """
-        SELECT polarity 
-        FROM imd_feeders_location_data 
-        WHERE numero_de_parte = %s AND posicion_de_feeder LIKE %s
+        SELECT polarity
+        FROM imd_feeders_location_data
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        LIMIT 1
         """
-        cursor.execute(query, (part_number, f"{machine}_%"))
+        cursor.execute(query, (part_number, machine_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1060,7 +1308,7 @@ def validate_polarity():
             return jsonify({'success': False, 'error': 'Configuración de polaridad no encontrada'})
             
     except Exception as e:
-        print(f"❌ Error en validate-polarity: {e}")
+        print(f"[ERROR] Error en validate-polarity: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 # API para guardar en historial
@@ -1068,73 +1316,149 @@ def validate_polarity():
 def save_history():
     try:
         data = request.get_json()
+        print(f"[INFO] Datos recibidos para save-history: {data}")
         
         # Validar datos requeridos
         required_fields = [
             'posicion_de_feeder', 'qr_almacen', 'numero_de_parte',
-            'qr_de_proveedor', 'numero_de_lote_proveedor', 'polaridad', 'persona'
+            'qr_de_proveedor', 'numero_de_lote_proveedor', 'polaridad', 'persona', 'line'
         ]
         
         for field in required_fields:
             if not data.get(field, '').strip():
-                return jsonify({'success': False, 'error': f'Campo requerido: {field}'})
+                error_msg = f'Campo requerido: {field}'
+                print(f"[ERROR] {error_msg}")
+                return jsonify({'success': False, 'error': error_msg})
         
         # Guardar en base de datos
         connection = get_db_connection()
         if not connection:
-            return jsonify({'success': False, 'error': 'Error de conexión a base de datos'})
+            error_msg = 'Error de conexión a base de datos'
+            print(f"[ERROR] {error_msg}")
+            return jsonify({'success': False, 'error': error_msg})
         
-        cursor = connection.cursor()
-        insert_query = """
-        INSERT INTO material_change_history 
-        (posicion_de_feeder, qr_almacen, numero_de_parte, spec, qr_de_proveedor, 
-         numero_de_lote_proveedor, polaridad, persona, timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        values = (
-            data['posicion_de_feeder'],
-            data['qr_almacen'],
-            data['numero_de_parte'],
-            data.get('spec', ''),
-            data['qr_de_proveedor'],
-            data['numero_de_lote_proveedor'],
-            data['polaridad'],
-            data['persona'],
-            datetime.now()
-        )
-        
-        cursor.execute(insert_query, values)
-        connection.commit()
-        
-        record_id = cursor.lastrowid
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'success': True,
-            'record_id': record_id,
-            'message': 'Registro guardado exitosamente'
-        })
+        try:
+            cursor = connection.cursor()
+            
+            # Verificar si la tabla existe primero
+            check_table_query = """
+            SELECT COUNT(*) FROM information_schema.tables 
+            WHERE table_schema = %s AND table_name = 'historial_cambio_material_imd'
+            """
+            cursor.execute(check_table_query, (connection.database,))
+            table_exists = cursor.fetchone()[0] > 0
+            
+            if not table_exists:
+                print("[INFO] Tabla historial_cambio_material_imd no existe, creándola...")
+                create_history_table()
+            
+            # Insertar datos
+            insert_query = """
+            INSERT INTO historial_cambio_material_imd 
+            (fecha, hora, line, posicion_de_feeder, qr_almacen, numero_de_parte, spec, qr_de_proveedor, 
+             numero_de_lote_proveedor, polaridad, persona, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            # Obtener fecha y hora actuales
+            now = datetime.now()
+            fecha_actual = now.date()
+            hora_actual = now.time()
+            
+            values = (
+                fecha_actual,
+                hora_actual,
+                data['line'],
+                data['posicion_de_feeder'],
+                data['qr_almacen'],
+                data['numero_de_parte'],
+                data.get('spec', ''),
+                data['qr_de_proveedor'],
+                data['numero_de_lote_proveedor'],
+                data['polaridad'],
+                data['persona'],
+                now
+            )
+            
+            print(f"[INFO] Ejecutando insert con valores: {values}")
+            cursor.execute(insert_query, values)
+            connection.commit()
+            
+            record_id = cursor.lastrowid
+            print(f"[SUCCESS] Registro guardado con ID: {record_id}")
+            
+            cursor.close()
+            connection.close()
+            
+            return jsonify({
+                'success': True,
+                'record_id': record_id,
+                'message': 'Registro guardado exitosamente'
+            })
+            
+        except mysql.connector.Error as db_error:
+            print(f"[ERROR] Error MySQL en save-history: {db_error}")
+            print(f"[ERROR] MySQL Error Code: {db_error.errno}")
+            print(f"[ERROR] MySQL Error Message: {db_error.msg}")
+            connection.rollback()
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'error': f'Error de base de datos: {db_error.msg}'})
         
     except Exception as e:
-        print(f"❌ Error en save-history: {e}")
+        print(f"[ERROR] Error general en save-history: {e}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 def find_free_port():
-    """Encuentra un puerto libre para Flask"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
+    """Encuentra un puerto libre para Flask con verificación mejorada"""
+    # Intentar varios puertos en rango común
+    preferred_ports = [5000, 5001, 5002, 5003, 5004, 5005]
+    
+    for port in preferred_ports:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', port))
+                s.listen(1)
+                actual_port = s.getsockname()[1]
+                print(f"[SUCCESS] Puerto {actual_port} disponible")
+                return actual_port
+        except OSError:
+            print(f"[WARNING] Puerto {port} ocupado, probando siguiente...")
+            continue
+    
+    # Si no hay puertos preferidos disponibles, usar puerto aleatorio
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            s.listen(1)
+            port = s.getsockname()[1]
+            print(f"[SUCCESS] Puerto aleatorio {port} asignado")
+            return port
+    except Exception as e:
+        print(f"[ERROR] Error encontrando puerto libre: {e}")
+        logger.error(f"Error encontrando puerto libre: {e}")
+        return 5000  # Puerto por defecto como último recurso
 
 def start_flask_server(port):
-    """Inicia el servidor Flask en un thread separado"""
+    """Inicia el servidor Flask en un thread separado con manejo robusto de errores"""
     try:
         logger.info(f"Iniciando servidor Flask en puerto {port}...")
+        print(f"[INFO] Iniciando servidor Flask en puerto {port}...")
         
-        # Crear tabla de historial
+        # Verificar conexión a base de datos antes de iniciar servidor
+        print("[INFO] Verificando conexión a base de datos...")
+        test_connection = get_db_connection()
+        if test_connection:
+            test_connection.close()
+            print("[SUCCESS] Conexión a base de datos verificada")
+        else:
+            print("[ERROR] No se pudo conectar a la base de datos")
+            logger.error("No se pudo conectar a la base de datos al iniciar")
+            return
+        
+        # Crear tabla de historial si no existe
         create_history_table()
         
         # Configurar Flask para modo de producción
@@ -1142,12 +1466,15 @@ def start_flask_server(port):
         app.config['TESTING'] = False
         app.config['ENV'] = 'production'
         
-        # Deshabilitar logging de Flask en modo producción
+        # Deshabilitar logging excesivo de Flask en modo producción
         import logging as flask_logging
-        flask_logging.getLogger('werkzeug').setLevel(flask_logging.ERROR)
+        werkzeug_logger = flask_logging.getLogger('werkzeug')
+        werkzeug_logger.setLevel(flask_logging.ERROR)
         
-        # Ejecutar servidor Flask
+        # Ejecutar servidor Flask con configuración robusta
         logger.info(f"Servidor Flask iniciado en http://{ProductionConfig.FLASK_HOST}:{port}")
+        print(f"[SUCCESS] Servidor Flask listo en http://{ProductionConfig.FLASK_HOST}:{port}")
+        
         app.run(
             host=ProductionConfig.FLASK_HOST, 
             port=port, 
@@ -1156,26 +1483,56 @@ def start_flask_server(port):
             threaded=True,
             processes=1
         )
+        
     except Exception as e:
-        logger.error(f"Error iniciando servidor Flask: {e}")
+        error_msg = f"Error crítico iniciando servidor Flask: {e}"
+        logger.error(error_msg)
+        print(f"[ERROR] {error_msg}")
+        import traceback
+        traceback.print_exc()
         raise
 
-def wait_for_flask_server(url, max_attempts=15, delay=1):
-    """Espera a que el servidor Flask esté disponible"""
+def wait_for_flask_server(url, max_attempts=30, delay=1):
+    """Espera a que el servidor Flask esté disponible con verificación robusta"""
     import requests
+    
+    print(f"[INFO] Esperando que el servidor Flask esté disponible en {url}...")
     
     for attempt in range(max_attempts):
         try:
-            response = requests.get(f"{url}/api/health", timeout=2)
+            # Verificar endpoint de salud
+            health_url = f"{url}/api/health"
+            response = requests.get(health_url, timeout=3)
+            
             if response.status_code == 200:
                 logger.info(f"Servidor Flask disponible en intento {attempt + 1}")
+                print(f"[SUCCESS] Servidor Flask respondiendo correctamente")
+                
+                # Verificar también conexión a base de datos
+                try:
+                    test_db_url = f"{url}/api/health"
+                    db_response = requests.get(test_db_url, timeout=3)
+                    if db_response.status_code == 200:
+                        print("[SUCCESS] Servidor y base de datos funcionando correctamente")
+                        return True
+                except:
+                    pass
+                
                 return True
-        except:
+                
+        except requests.exceptions.RequestException as e:
+            if attempt < 5:  # Solo mostrar errores en los primeros intentos
+                print(f"[INFO] Esperando servidor... intento {attempt + 1}/{max_attempts}")
+            pass
+        except Exception as e:
+            if attempt < 5:
+                print(f"[WARNING] Error verificando servidor: {e}")
             pass
         
-        logger.info(f"Esperando servidor Flask... intento {attempt + 1}/{max_attempts}")
         time.sleep(delay)
     
+    print(f"[ERROR] Servidor Flask no disponible después de {max_attempts} intentos")
+    logger.error(f"Servidor Flask no disponible después de {max_attempts} intentos")
     return False
 
 def main():
@@ -1204,7 +1561,7 @@ def main():
             logger.error("El servidor Flask no pudo iniciarse correctamente")
             return
         
-        # Configurar ventana de webview
+        # Configurar ventana de webview con PyWebView optimizado
         logger.info("Iniciando interfaz de escritorio...")
         
         # Verificar si existe el icono personalizado
@@ -1218,20 +1575,56 @@ def main():
         # Configuración de ventana
         window_config = ProductionConfig.WINDOW_CONFIG.copy()
         
-        # Crear ventana de la aplicación maximizada y no redimensionable
-        webview.create_window(
-            title=f'{ProductionConfig.APP_NAME} v{ProductionConfig.APP_VERSION}',
-            url=flask_url,
-            width=window_config.get('width', 1920),
-            height=window_config.get('height', 1080),
-            min_size=window_config.get('min_size', (1200, 800)),
-            resizable=window_config.get('resizable', False),
-            maximized=window_config.get('maximized', True)
-        )
+        # Configurar PyWebView para usar Edge Chromium y evitar ventanas duplicadas
+        os.environ['PYWEBVIEW_GUI'] = 'edgechromium'
+        os.environ['PYWEBVIEW_DEBUG'] = 'false'
         
-        # Ejecutar aplicación
-        logger.info("Aplicación iniciada exitosamente")
-        webview.start(debug=False)
+        # Crear ventana única de la aplicación
+        try:
+            webview.create_window(
+                title=f'{ProductionConfig.APP_NAME} v{ProductionConfig.APP_VERSION}',
+                url=flask_url,
+                width=window_config.get('width', 1920),
+                height=window_config.get('height', 1080),
+                min_size=window_config.get('min_size', (1200, 800)),
+                resizable=window_config.get('resizable', False),
+                maximized=window_config.get('maximized', True),
+                confirm_close=True,  # Confirmar antes de cerrar
+                text_select=True     # Permitir selección de texto
+            )
+            
+            # Ejecutar aplicación con Edge Chromium
+            logger.info("Aplicación iniciada exitosamente")
+            webview.start(gui='edgechromium', debug=False)
+            
+        except Exception as webview_error:
+            logger.warning(f"Error con Edge Chromium: {webview_error}")
+            logger.info("Intentando con configuración automática...")
+            
+            # Fallback: usar detección automática
+            try:
+                # Limpiar configuración específica
+                if 'PYWEBVIEW_GUI' in os.environ:
+                    del os.environ['PYWEBVIEW_GUI']
+                
+                webview.create_window(
+                    title=f'{ProductionConfig.APP_NAME} v{ProductionConfig.APP_VERSION}',
+                    url=flask_url,
+                    width=window_config.get('width', 1920),
+                    height=window_config.get('height', 1080),
+                    min_size=window_config.get('min_size', (1200, 800)),
+                    resizable=window_config.get('resizable', False),
+                    maximized=window_config.get('maximized', True),
+                    confirm_close=True,
+                    text_select=True
+                )
+                
+                webview.start(debug=False)
+                logger.info("Aplicación iniciada con configuración automática")
+                
+            except Exception as fallback_error:
+                logger.error(f"Error con configuración automática: {fallback_error}")
+                raise
         
     except Exception as e:
         logger.error(f"Error iniciando la aplicación: {e}")

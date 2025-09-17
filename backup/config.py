@@ -8,51 +8,38 @@ class ProductionConfig:
     # Configuración de base de datos - se adapta automáticamente por PC
     @staticmethod
     def get_db_config():
-        """Retorna configuración de DB según la PC"""
-        hostname = socket.gethostname().upper()
-        
-        # Configuraciones específicas por PC/Estación
-        db_configs = {
-            # Estación 1 - Línea AXIAL
-            'PC-AXIAL-01': {
-                'host': '192.168.1.100',  # IP del servidor MySQL local
-                'user': 'imd_user',
-                'password': 'imd_password',
-                'database': 'imd_production',
-                'machine_default': 'AXIAL'
-            },
-            
-            # Estación 2 - Línea RADIAL  
-            'PC-RADIAL-01': {
-                'host': '192.168.1.100',
-                'user': 'imd_user', 
-                'password': 'imd_password',
-                'database': 'imd_production',
-                'machine_default': 'RADIAL'
-            },
-            
-            # Configuración por defecto (desarrollo/otras PCs)
-            'DEFAULT': {
-                'host': '127.0.0.1',
-                'user': 'root',
-                'password': '',
-                'database': 'imd_local',
-                'machine_default': 'AXIAL'
-            }
+        """Retorna configuración de DB exclusivamente para la nube indicada."""
+        # Solo usar esta base de datos y credenciales (sin locales)
+        config = {
+            'host': 'up-de-fra1-mysql-1.db.run-on-seenode.com',
+            'port': 11550,
+            'user': 'db_rrpq0erbdujn',
+            'password': '5fUNbSRcPP3LN9K2I33Pr0ge',
+            'database': 'db_rrpq0erbdujn',
+            'machine_default': 'AXIAL',
+            # Mantener lista de candidatos solo con el mismo perfil (compatibilidad)
+            'candidates': [
+                {
+                    'host': 'up-de-fra1-mysql-1.db.run-on-seenode.com',
+                    'port': 11550,
+                    'user': 'db_rrpq0erbdujn',
+                    'password': '5fUNbSRcPP3LN9K2I33Pr0ge',
+                    'database': 'db_rrpq0erbdujn',
+                }
+            ]
         }
-        
-        # Buscar configuración específica o usar default
-        config = db_configs.get(hostname, db_configs['DEFAULT'])
-        
+
         return {
             'host': config['host'],
+            'port': config['port'],
             'user': config['user'],
             'password': config['password'],
             'database': config['database'],
             'charset': 'utf8mb4',
             'collation': 'utf8mb4_unicode_ci',
             'autocommit': True,
-            'machine_default': config['machine_default']
+            'machine_default': config['machine_default'],
+            'candidates': config['candidates'],
         }
     
     # Configuración de aplicación

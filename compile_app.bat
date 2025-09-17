@@ -14,9 +14,9 @@ if errorlevel 1 (
 )
 
 echo [2/5] Verificando dependencias...
-python -c "import flask, webview, mysql.connector; print('✓ Dependencias OK')"
+python -c "import flask, flask_cors, webview, mysql.connector, requests; print('✓ Dependencias OK')"
 if errorlevel 1 (
-    echo Error: Faltan dependencias. Ejecute: pip install flask flask-cors pywebview mysql-connector-python
+    echo Error: Faltan dependencias. Ejecute: pip install flask flask-cors pywebview mysql-connector-python requests
     pause
     exit /b 1
 )
