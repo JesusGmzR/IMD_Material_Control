@@ -220,10 +220,33 @@ def create_history_table():
             """
             cursor.execute(create_table_query)
             connection.commit()
-            
+
+            # Verificar columna 'line' en tablas existentes y agregarla si hace falta
+            column_check_query = """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = %s
+              AND table_name = 'historial_cambio_material_imd'
+              AND column_name = 'line'
+            """
+            cursor.execute(column_check_query, (connection.database,))
+            has_line_column = cursor.fetchone()[0] > 0
+
+            if not has_line_column:
+                print("[INFO] Agregando columna 'line' a historial_cambio_material_imd existente")
+                cursor.execute(
+                    "ALTER TABLE historial_cambio_material_imd "
+                    "ADD COLUMN line VARCHAR(10) DEFAULT NULL AFTER hora"
+                )
+                cursor.execute(
+                    "ALTER TABLE historial_cambio_material_imd "
+                    "ADD INDEX idx_line (line)"
+                )
+                connection.commit()
+
             # Verificar que la tabla se creó correctamente
             verify_query = """
-            SELECT COUNT(*) FROM information_schema.tables 
+            SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = %s AND table_name = 'historial_cambio_material_imd'
             """
             cursor.execute(verify_query, (connection.database,))
@@ -588,6 +611,8 @@ const machineStates = {
         partNumber: '',
         spec: '',
         dbPolarity: '',
+        expectedFeeder: '',
+        expectedPolarity: '',
         feederValid: false,
         polarityValid: false,
         allDataReady: false
@@ -603,6 +628,8 @@ const machineStates = {
         partNumber: '',
         spec: '',
         dbPolarity: '',
+        expectedFeeder: '',
+        expectedPolarity: '',
         feederValid: false,
         polarityValid: false,
         allDataReady: false
@@ -696,7 +723,12 @@ async function apiRequest(endpoint, data = null) {
 // Función para buscar información de parte
 async function searchPart(machineType, qrAlmacen) {
     const state = machineStates[machineType];
-    
+
+    if (!selectedLine) {
+        showModal('Error', 'Debe seleccionar una línea de producción', true);
+        return;
+    }
+
     try {
         // Extraer número de parte
         const partNumber = extractPartNumber(qrAlmacen);
@@ -704,7 +736,51 @@ async function searchPart(machineType, qrAlmacen) {
             showModal('Error', 'No se pudo extraer el número de parte del QR almacén', true);
             return;
         }
-        
+
+        // Restablecer estado dependiente de feeder y polaridad antes de la búsqueda
+        Object.assign(state, {
+            partNumber: '',
+            spec: '',
+            dbPolarity: '',
+            expectedFeeder: '',
+            expectedPolarity: '',
+            feeder: '',
+            polaridad: '',
+            feederValid: false,
+            polarityValid: false,
+            allDataReady: false
+        });
+
+        const specInput = document.getElementById(`${machineType}-spec`);
+        if (specInput) {
+            specInput.value = '';
+            specInput.style.backgroundColor = '';
+        }
+
+        const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
+        if (polarityDisplayDiv) {
+            polarityDisplayDiv.innerHTML = '';
+        }
+
+        const resultDisplayDiv = document.getElementById(`${machineType}-resultado-display`);
+        if (resultDisplayDiv) {
+            resultDisplayDiv.innerHTML = '';
+        }
+
+        const feederInput = document.getElementById(`${machineType}-feeder`);
+        if (feederInput) {
+            feederInput.value = '';
+            feederInput.style.backgroundColor = '';
+            feederInput.classList.remove('validation-error');
+        }
+
+        const polarityInput = document.getElementById(`${machineType}-polaridad`);
+        if (polarityInput) {
+            polarityInput.value = '';
+            polarityInput.style.backgroundColor = '';
+            polarityInput.classList.remove('validation-error');
+        }
+
         // Buscar en base de datos
         const result = await apiRequest('/search-part', {
             qr_almacen: qrAlmacen,
@@ -717,19 +793,15 @@ async function searchPart(machineType, qrAlmacen) {
             state.partNumber = result.part_number;
             state.spec = result.data.spec;
             state.dbPolarity = result.data.polarity;
-            
+
             // Actualizar UI - Spec
             const specInput = document.getElementById(`${machineType}-spec`);
-            specInput.value = result.data.spec;
-            specInput.style.backgroundColor = '#1a472a'; // Verde oscuro
-            
-            // Actualizar UI - Polaridad en bloque de visualización
-            const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
-            if (polarityDisplayDiv) {
-                polarityDisplayDiv.innerHTML = `<h1 style="color: white; margin: 0; text-align: center; line-height: 1.2; padding: 20px 0;">${result.data.polarity || 'N/A'}</h1>`;
+            if (specInput) {
+                specInput.value = result.data.spec;
+                specInput.style.backgroundColor = '#1a472a'; // Verde oscuro
             }
-            
-            console.log(`✅ Datos encontrados para ${state.machine}:`, result.data);
+
+            console.log(`Datos encontrados para ${state.machine}:`, result.data);
         } else {
             showModal('Error', `No se encontraron datos para el número de parte: ${partNumber}`, true);
         }
@@ -764,7 +836,7 @@ async function validateFeeder(machineType, feederScanned) {
         
         if (result.success) {
             state.feederValid = result.is_valid;
-            
+
             // Actualizar color del input según validación
             const feederInput = document.getElementById(`${machineType}-feeder`);
             if (feederInput) {
@@ -776,21 +848,44 @@ async function validateFeeder(machineType, feederScanned) {
                     feederInput.classList.add('validation-error');
                 }
             }
-            
+
             // Actualizar bloque de resultado
             updateResultDisplay(machineType);
-            
-            // Si el feeder es válido, mostrar la polaridad esperada
-            if (result.is_valid && result.expected_polarity) {
-                updatePolarityDisplay(machineType, result.expected_polarity);
+
+            if (typeof result.expected_polarity !== 'undefined') {
+                state.expectedFeeder = result.expected_feeder || '';
+                state.expectedPolarity = result.expected_polarity || '';
+                updatePolarityDisplay(machineType, state.expectedPolarity);
             }
-            
+
             console.log(`Validación feeder ${state.machine} (línea ${selectedLine}):`, result.is_valid ? 'OK' : 'NG');
         } else {
+            state.feederValid = false;
+            state.expectedFeeder = '';
+            state.expectedPolarity = '';
+            const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
+            if (polarityDisplayDiv) {
+                polarityDisplayDiv.innerHTML = '';
+            }
+            const resultDisplayDiv = document.getElementById(`${machineType}-resultado-display`);
+            if (resultDisplayDiv) {
+                resultDisplayDiv.innerHTML = '';
+            }
             showModal('Error', 'Error validando feeder', true);
         }
-        
+
     } catch (error) {
+        state.feederValid = false;
+        state.expectedFeeder = '';
+        state.expectedPolarity = '';
+        const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
+        if (polarityDisplayDiv) {
+            polarityDisplayDiv.innerHTML = '';
+        }
+        const resultDisplayDiv = document.getElementById(`${machineType}-resultado-display`);
+        if (resultDisplayDiv) {
+            resultDisplayDiv.innerHTML = '';
+        }
         showModal('Error', 'Error conectando con el servidor para validar feeder', true);
         console.error('Error validando feeder:', error);
     }
@@ -858,7 +953,7 @@ function updatePolarityDisplayColor(machineType, isValid) {
         if (currentText && currentText !== 'N/A') {
             const color = isValid ? '#22c55e' : '#ef4444'; // Verde si es válido, rojo si no
             polarityDisplayDiv.innerHTML = `<h1 style="color: ${color}; margin: 0; text-align: center; line-height: 1.2; padding: 20px 0;">${currentText}</h1>`;
-            console.log(`🎨 Color de polaridad actualizado para ${machineType}: ${isValid ? 'VERDE (válida)' : 'ROJO (inválida)'}`);
+            console.log(`Color de polaridad actualizado para ${machineType}: ${isValid ? 'verde (válida)' : 'rojo (inválida)'}`);
         }
     }
 }
@@ -868,7 +963,7 @@ function updatePolarityDisplay(machineType, expectedPolarity) {
     const polarityDisplayDiv = document.getElementById(`${machineType}-polaridad-display`);
     if (polarityDisplayDiv) {
         polarityDisplayDiv.innerHTML = `<h1 style="color: white; margin: 0; text-align: center; line-height: 1.2; padding: 20px 0;">${expectedPolarity || 'N/A'}</h1>`;
-        console.log(`📋 Polaridad esperada mostrada para ${machineType}: ${expectedPolarity}`);
+        console.log(`Polaridad esperada mostrada para ${machineType}: ${expectedPolarity}`);
     }
 }
 
@@ -922,7 +1017,12 @@ function checkAllDataReady(machineType) {
 // Función para guardar en historial
 async function saveToHistory(machineType) {
     const state = machineStates[machineType];
-    
+
+    if (!selectedLine) {
+        showModal('Error', 'Debe seleccionar una línea de producción', true);
+        return;
+    }
+
     // Verificar si hay errores
     if (!state.feederValid || !state.polarityValid) {
         let errorMessage = 'Se encontraron los siguientes errores:<br><br>';
@@ -979,8 +1079,8 @@ async function saveToHistory(machineType) {
 function clearMachineForm(machineType) {
     const state = machineStates[machineType];
     
-    console.log(`🧹 Limpiando formulario para máquina ${machineType.toUpperCase()}`);
-    
+    console.log(`Limpiando formulario para máquina ${machineType.toUpperCase()}`);
+
     // Resetear estado
     Object.assign(state, {
         qrAlmacen: '',
@@ -992,6 +1092,8 @@ function clearMachineForm(machineType) {
         partNumber: '',
         spec: '',
         dbPolarity: '',
+        expectedFeeder: '',
+        expectedPolarity: '',
         feederValid: false,
         polarityValid: false,
         allDataReady: false
@@ -1009,33 +1111,33 @@ function clearMachineForm(machineType) {
             input.value = '';
             input.style.backgroundColor = ''; // Resetear color
             input.classList.remove('validation-error'); // Remover clase de error
-            console.log(`✅ Limpiado input: ${machineType}-${inputName}`);
+            console.log(`Input limpiado: ${machineType}-${inputName}`);
         }
     });
-    
+
     // Limpiar displays de visualización
     const polarityDisplay = document.getElementById(`${machineType}-polaridad-display`);
     if (polarityDisplay) {
         polarityDisplay.innerHTML = '';
-        console.log(`✅ Limpiado display de polaridad: ${machineType}-polaridad-display`);
+        console.log(`Display de polaridad limpiado: ${machineType}-polaridad-display`);
     } else {
-        console.warn(`⚠️ No se encontró elemento: ${machineType}-polaridad-display`);
+        console.warn(`No se encontró elemento: ${machineType}-polaridad-display`);
     }
-    
+
     const resultDisplay = document.getElementById(`${machineType}-resultado-display`);
     if (resultDisplay) {
         resultDisplay.innerHTML = '';
-        console.log(`✅ Limpiado display de resultado: ${machineType}-resultado-display`);
+        console.log(`Display de resultado limpiado: ${machineType}-resultado-display`);
     } else {
-        console.warn(`⚠️ No se encontró elemento: ${machineType}-resultado-display`);
+        console.warn(`No se encontró elemento: ${machineType}-resultado-display`);
     }
-    
-    console.log(`✨ Formulario ${machineType.toUpperCase()} completamente limpiado`);
+
+    console.log(`Formulario ${machineType.toUpperCase()} completamente limpiado`);
 }
 
 // Función para limpiar todos los estados de máquina
 function clearAllMachineStates() {
-    console.log('🧹 Limpiando todos los estados de máquina por cambio de línea');
+    console.log('Limpiando todos los estados de máquina por cambio de línea');
     clearMachineForm('axial');
     clearMachineForm('radial');
 }
@@ -1102,7 +1204,7 @@ function setupEventListeners() {
 
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Aplicación IMD Control iniciada');
+    console.log('Aplicación IMD Control iniciada');
     setupEventListeners();
     
     // Event listener para el selector de línea
@@ -1110,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (lineSelector) {
         lineSelector.addEventListener('change', function(e) {
             selectedLine = e.target.value;
-            console.log(`📍 Línea seleccionada: ${selectedLine}`);
+            console.log(`Línea seleccionada: ${selectedLine}`);
             
             // Limpiar estados si se cambia la línea
             if (selectedLine) {
@@ -1123,10 +1225,10 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch(`${API_BASE_URL}/health`)
         .then(response => response.json())
         .then(data => {
-            console.log('✅ Servidor conectado:', data);
+            console.log('Servidor conectado:', data);
         })
         .catch(error => {
-            console.error('❌ Error conectando con servidor:', error);
+            console.error('Error conectando con servidor:', error);
             showModal('Error de Conexión', 
                 'No se pudo conectar con el servidor. Verifique que esté ejecutándose.', 
                 true);
@@ -1156,13 +1258,13 @@ def search_part():
         qr_almacen = data.get('qr_almacen', '').strip()
         machine = data.get('machine', '').strip()
         line = data.get('line', '').strip()
-        
+
         if not qr_almacen:
             return jsonify({'success': False, 'error': 'QR almacén requerido'})
-        
+
         if not line:
             return jsonify({'success': False, 'error': 'Línea de producción requerida'})
-        
+
         # Extraer número de parte del QR almacén
         separators = [',', "'", '_', '-']
         part_number = qr_almacen
@@ -1173,22 +1275,23 @@ def search_part():
         # Normalizar valores para comparación
         part_number = part_number.strip()
         machine_norm = machine.strip().upper()
-        
+        line_norm = line.strip().upper()
+
         # Buscar en base de datos
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'error': 'Error de conexión a base de datos'})
-        
+
         cursor = connection.cursor(buffered=True)
         # no_part: número de parte, machine: máquina, feeder: posición (sin prefijo)
         # Construimos posicion_de_feeder como machine + '_' + feeder para mantener compatibilidad con la UI
         query = """
         SELECT no_part, spec, CONCAT(machine, '_', feeder) AS posicion_de_feeder, polarity
         FROM imd_feeders_location_data
-        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s AND UPPER(line) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, machine_norm))
+        cursor.execute(query, (part_number, machine_norm, line_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1222,6 +1325,7 @@ def validate_feeder():
         machine = data.get('machine', '').strip()
         line = data.get('line', '').strip()
         machine_norm = machine.upper()
+        line_norm = line.upper()
         
         if not all([part_number, feeder_scanned, machine, line]):
             return jsonify({'success': False, 'error': 'Datos incompletos (part_number, feeder_scanned, machine, line requeridos)'})
@@ -1236,10 +1340,10 @@ def validate_feeder():
         query = """
         SELECT feeder, polarity
         FROM imd_feeders_location_data
-        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s AND UPPER(line) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, machine_norm))
+        cursor.execute(query, (part_number, machine_norm, line_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1273,6 +1377,7 @@ def validate_polarity():
         machine = data.get('machine', '').strip()
         line = data.get('line', '').strip()
         machine_norm = machine.upper()
+        line_norm = line.upper()
         
         if not all([part_number, polarity_scanned, machine, line]):
             return jsonify({'success': False, 'error': 'Datos incompletos (part_number, polarity_scanned, machine, line requeridos)'})
@@ -1286,10 +1391,10 @@ def validate_polarity():
         query = """
         SELECT polarity
         FROM imd_feeders_location_data
-        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s AND UPPER(line) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, machine_norm))
+        cursor.execute(query, (part_number, machine_norm, line_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1297,7 +1402,10 @@ def validate_polarity():
         
         if result:
             expected_polarity = result[0]
-            is_valid = expected_polarity.upper() == polarity_scanned.upper()
+            if expected_polarity is None:
+                is_valid = True
+            else:
+                is_valid = str(expected_polarity).upper() == polarity_scanned.upper()
             return jsonify({
                 'success': True,
                 'is_valid': is_valid,
