@@ -1222,6 +1222,7 @@ def validate_feeder():
         machine = data.get('machine', '').strip()
         line = data.get('line', '').strip()
         machine_norm = machine.upper()
+        line_norm = line.upper()
         
         if not all([part_number, feeder_scanned, machine, line]):
             return jsonify({'success': False, 'error': 'Datos incompletos (part_number, feeder_scanned, machine, line requeridos)'})
@@ -1236,10 +1237,10 @@ def validate_feeder():
         query = """
         SELECT feeder, polarity
         FROM imd_feeders_location_data
-        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s AND UPPER(line) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, machine_norm))
+        cursor.execute(query, (part_number, machine_norm, line_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1273,6 +1274,7 @@ def validate_polarity():
         machine = data.get('machine', '').strip()
         line = data.get('line', '').strip()
         machine_norm = machine.upper()
+        line_norm = line.upper()
         
         if not all([part_number, polarity_scanned, machine, line]):
             return jsonify({'success': False, 'error': 'Datos incompletos (part_number, polarity_scanned, machine, line requeridos)'})
@@ -1286,10 +1288,10 @@ def validate_polarity():
         query = """
         SELECT polarity
         FROM imd_feeders_location_data
-        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s
+        WHERE UPPER(no_part) = UPPER(%s) AND UPPER(machine) = %s AND UPPER(line) = %s
         LIMIT 1
         """
-        cursor.execute(query, (part_number, machine_norm))
+        cursor.execute(query, (part_number, machine_norm, line_norm))
         result = cursor.fetchone()
         
         cursor.close()
@@ -1297,7 +1299,10 @@ def validate_polarity():
         
         if result:
             expected_polarity = result[0]
-            is_valid = expected_polarity.upper() == polarity_scanned.upper()
+            if expected_polarity is None:
+                is_valid = True
+            else:
+                is_valid = str(expected_polarity).upper() == polarity_scanned.upper()
             return jsonify({
                 'success': True,
                 'is_valid': is_valid,
