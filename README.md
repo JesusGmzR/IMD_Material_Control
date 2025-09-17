@@ -62,6 +62,15 @@ source .venv/bin/activate
 pip install flask flask-cors mysql-connector-python pandas openpyxl
 ```
 
+### 3.1 Dependencias opcionales para pruebas
+- Instala `pytest` para ejecutar la batería de pruebas automatizadas.
+- Instala `requests` para habilitar las pruebas de integración que consumen el API REST.
+- Configura la variable de entorno `IMD_API_BASE_URL` cuando el servicio se encuentra en una URL distinta a `http://127.0.0.1:5000`.
+
+```bash
+pip install pytest requests
+```
+
 ### 4. Configurar base de datos
 - Crear base de datos MySQL
 - Actualizar credenciales en `app.py`:
@@ -69,7 +78,7 @@ pip install flask flask-cors mysql-connector-python pandas openpyxl
 'host': 'tu-host-mysql',
 'user': 'tu-usuario',
 'password': 'tu-password',
-'database': 'tu-base-datos'
+    'database': 'tu-base-de-datos'
 ```
 
 ### 5. Cargar datos iniciales (opcional)
@@ -163,6 +172,20 @@ Guarda registro en historial
   "polaridad": "+",
   "persona": "OPERATOR1"
 }
+```
+
+## ✅ Pruebas
+
+Ejecuta las pruebas automatizadas desde la raíz del proyecto:
+
+```bash
+pytest
+```
+
+Para ejecutar únicamente las pruebas de integración (que requieren el servicio backend en funcionamiento y la librería `requests` instalada):
+
+```bash
+pytest -m integration
 ```
 
 ## 🎨 Características de UI
