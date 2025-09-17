@@ -411,7 +411,7 @@ h1,h2,h3,h4,h5,h6 { color: #fff; font-family: var(--font-base); font-weight:600;
 <body class="app-bg">
   <!-- Navbar Principal -->
   <header class="mb-4">
-    <div class="container-fluid">
+    <div class="container-fluid mb-4">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3 fixed-top">
         <div class="container-fluid d-flex align-items-center">
           <!-- Logo -->
